@@ -12,7 +12,7 @@ def get_credentials():
     if not google_creds:
         raise ValueError("❌ GOOGLE_SHEET_CREDENTIALS environment variable is not set.")
     credentials_data = base64.b64decode(google_creds)
-    credentials_path = "/tmp/credentials.json"
+    credentials_path = "credentials.json"
     with open(credentials_path, "wb") as f:
         f.write(credentials_data)
     return credentials_path
