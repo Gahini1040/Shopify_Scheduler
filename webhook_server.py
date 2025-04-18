@@ -42,4 +42,4 @@ def handle_customer_deleted():
     return '', 200  # Respond with a 200 status to acknowledge receipt
 
 if __name__ == "__main__":
-    app.run(port=5000)  # Run Flask on port 5000
+    app.run(host="0.0.0.0", port=5000)
