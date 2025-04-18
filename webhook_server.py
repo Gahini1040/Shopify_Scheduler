@@ -1,72 +1,66 @@
 from flask import Flask, request
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import os
-import base64
-import traceback  # For detailed error logging
+from config import CREDENTIALS_FILE
 
 app = Flask(__name__)
+GOOGLE_SHEET_NAME = "Cust_Information"  # Your Google Sheet name
 
-# Decode credentials from environment variable and save temporarily
-def get_credentials():
-    google_creds = os.getenv("GOOGLE_SHEET_CREDENTIALS")
-    if not google_creds:
-        raise ValueError("❌ GOOGLE_SHEET_CREDENTIALS environment variable is not set.")
-    
-    credentials_data = base64.b64decode(google_creds)
-    credentials_path = "/tmp/credentials.json"  # Use /tmp on Render; local works too
+def get_gsheet_client():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+    return gspread.authorize(creds)
 
-    with open(credentials_path, "wb") as f:
-        f.write(credentials_data)
+def update_google_sheet(customer_data):
+    client = get_gsheet_client()
+    sheet = client.open(GOOGLE_SHEET_NAME).sheet1
+    all_data = sheet.get_all_records()
+    headers = sheet.row_values(1)
 
-    return credentials_path
+    # Prepare new row with existing headers
+    new_row = [customer_data.get(col, "") for col in headers]
 
-# Connect to the Google Sheet
-def get_sheet():
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    creds_path = get_credentials()
-    creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
-    client = gspread.authorize(creds)
-    return client.open("cust").sheet1  # 👈 Replace with your actual sheet name if different
+    # Check if customer already exists
+    for idx, row in enumerate(all_data, start=2):  # start=2 because headers are in row 1
+        if str(row.get("id")) == str(customer_data["id"]):
+            sheet.update(f"A{idx}", [new_row])
+            print(f"✅ Updated customer {customer_data['id']}")
+            return
 
-# Webhook endpoint to handle customer deletion
-@app.route('/webhook/customers/delete', methods=['POST'])
-def handle_customer_deleted():
-    try:
-        data = request.get_json()
-        if not data or "id" not in data:
-            print("⚠️ Invalid payload received.")
-            return "Invalid payload", 400
+    # If customer not found, insert new
+    sheet.append_row(new_row)
+    print(f"✅ Inserted new customer {customer_data['id']}")
 
-        customer_id = str(data["id"])
-        print(f"🛠️ Processing delete webhook for customer ID: {customer_id}")
+def delete_customer_from_sheet(customer_id):
+    client = get_gsheet_client()
+    sheet = client.open(GOOGLE_SHEET_NAME).sheet1
+    all_data = sheet.get_all_records()
+    for idx, row in enumerate(all_data, start=2):
+        if str(row.get("id")) == str(customer_id):
+            sheet.delete_rows(idx)
+            print(f"🗑️ Deleted customer {customer_id}")
+            return
 
-        sheet = get_sheet()
-        records = sheet.get_all_records()
+@app.route("/")
+def index():
+    return "🚀 Flask app is running!"
 
-        for i, row in enumerate(records):
-            if str(row.get("id")) == customer_id:
-                sheet.delete_rows(i + 2)  # i+2 to skip the header
-                print(f"✅ Deleted customer ID {customer_id} from Google Sheet.")
-                break
-        else:
-            print(f"⚠️ Customer ID {customer_id} not found in sheet.")
+@app.route("/webhook/customer/create", methods=["POST"])
+@app.route("/webhook/customer/update", methods=["POST"])
+def customer_create_or_update():
+    data = request.get_json()
+    if data and "id" in data:
+        update_google_sheet(data)
+        return "Customer processed", 200
+    return "Invalid data", 400
 
-    except Exception as e:
-        print("❌ Exception occurred while processing the request:")
-        traceback.print_exc()  # Detailed traceback
-        return "Internal Server Error", 500
+@app.route("/webhook/customer/delete", methods=["POST"])
+def customer_delete():
+    data = request.get_json()
+    if data and "id" in data:
+        delete_customer_from_sheet(data["id"])
+        return "Customer deleted", 200
+    return "Invalid data", 400
 
-    return '', 200
-
-# Health check route
-@app.route('/')
-def home():
-    return "✅ Shopify webhook listener is running!"
-
-# Run the app
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(port=5000)
