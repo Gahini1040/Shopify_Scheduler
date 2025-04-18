@@ -5,7 +5,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from config import SHOP_URL, API_VERSION, ACCESS_TOKEN, CREDENTIALS_FILE
 
-GOOGLE_SHEET_NAME = "cust"
+GOOGLE_SHEET_NAME = "Cust_Information"
 LAST_ROW_TRACKING_CELL = "Z1"  # We'll store last processed ID here
 
 def get_gsheet_client():
